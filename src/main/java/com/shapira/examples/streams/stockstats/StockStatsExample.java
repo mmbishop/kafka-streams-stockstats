@@ -58,10 +58,7 @@ public class StockStatsExample {
         DescribeClusterResult dcr = ac.describeCluster();
         int clusterSize = dcr.nodes().get().size();
 
-        if (clusterSize<3)
-            props.put("replication.factor",clusterSize);
-        else
-            props.put("replication.factor",3);
+        props.put("replication.factor", Math.min(clusterSize, 3));
 
         StreamsBuilder builder = new StreamsBuilder();
 
@@ -70,11 +67,11 @@ public class StockStatsExample {
         KStream<Windowed<String>, TradeStats> stats = source
                 .groupByKey()
                 .windowedBy(TimeWindows.of(Duration.ofMillis(windowSize)).advanceBy(Duration.ofSeconds(1)))
-                .<TradeStats>aggregate(() -> new TradeStats(),(k, v, tradestats) -> tradestats.add(v),
+                .aggregate(TradeStats::new, (k, v, tradestats) -> tradestats.add(v),
                         Materialized.<String, TradeStats, WindowStore<Bytes, byte[]>>as("trade-aggregates")
                                 .withValueSerde(new TradeStatsSerde()))
                 .toStream()
-                .mapValues((trade) -> trade.computeAvgPrice());
+                .mapValues(TradeStats::computeAvgPrice);
 
         stats.to("stockstats-output", Produced.keySerde(WindowedSerdes.timeWindowedSerdeFrom(String.class, windowSize)));
 
@@ -95,13 +92,13 @@ public class StockStatsExample {
 
     static public final class TradeSerde extends WrapperSerde<Trade> {
         public TradeSerde() {
-            super(new JsonSerializer<Trade>(), new JsonDeserializer<Trade>(Trade.class));
+            super(new JsonSerializer<>(), new JsonDeserializer<>(Trade.class));
         }
     }
 
     static public final class TradeStatsSerde extends WrapperSerde<TradeStats> {
         public TradeStatsSerde() {
-            super(new JsonSerializer<TradeStats>(), new JsonDeserializer<TradeStats>(TradeStats.class));
+            super(new JsonSerializer<>(), new JsonDeserializer<>(TradeStats.class));
         }
     }
 
